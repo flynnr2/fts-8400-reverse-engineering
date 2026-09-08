@@ -1,37 +1,117 @@
-# GPS Navigation System
+# The GPS Navigation System
 
 [Project index](../README.md) · [Complete edition](How%20the%20FTS%208400%20Worked%20-%20Complete.md)
 
-### Broadcast data model
+## A complete NAV database in RAM
 
-**Confirmed:** the application maintains separate records/arrays for ephemeris, almanac, ionosphere, UTC/leap-second data, validity, health, and use history. Many satellite fields use a `$108`-byte stride—33 eight-byte slots—consistent with indexed PRN storage.
+The ROM's reporting strings first gave away the scale of the navigation system. Names such as `IODC`, `IODE`, `SQRT A`, `DELTA N`, `OMEGA`, `ALPHA`, `BETA`, and the leap-second fields are not a loose diagnostic vocabulary. Following their report routines leads to arrays holding the decoded GPS broadcast message.
 
-The ephemeris model includes:
-
-```text
-WN, Z-count, IODC, IODE, TOC, TOE
-AF0, AF1, AF2, TGD
-sqrt(A), eccentricity, M0, delta-n
-i0, IDOT, omega, Omega0, Omega-dot
-CRS, CRC, CUS, CUC, CIS, CIC
-health, alert, fit interval, validity, merit, last-use time
-```
-
-The almanac model separately stores week/time, TOA, `sqrt(A)`, eccentricity, `M0`, `i0`, `omega`, `Omega0`, `Omega-dot`, and validity. The receiver can therefore select full ephemeris, fall back to almanac for prediction, or report that orbit data is unavailable.
-
-The shared ionosphere/UTC record contains `ALPHA0..3`, `BETA0..3`, UTC `A0/A1`, `T_ot`, current and future leap seconds, `WN_t`, `WN_LSF`, and day number. A database checksum routine is also present.
-
-### GPS week and calendar handling
-
-**Confirmed:** current expanded GPS week and day-of-week are held near global offsets `-$2EB9` and `-$2EBA`. The calendar pipeline uses:
+Many satellite arrays use a stride of `$108` bytes—33 slots of eight bytes—providing indexed storage across the GPS satellite set. The full ephemeris records include:
 
 ```text
-MJD = GPS_week * 7 + day_of_week + 44244
+week and Z-count                 IODC, IODE, TOC, TOE
+AF0, AF1, AF2, TGD              sqrt(A), eccentricity, M0, delta-n
+i0, IDOT, omega                 Omega0, Omega-dot
+CRS, CRC, CUS, CUC, CIS, CIC   health, alert, fit and validity state
 ```
 
-where 44244 is the MJD of the GPS epoch, 6 January 1980. The MJD-to-calendar routine at about `$0963D2` starts from 17 November 1858 and implements the full Gregorian divisible-by-4/100/400 leap-year rule.
+Almanac data is stored separately, with the reduced orbital parameter set expected from the broadcast almanac. This supports the front-panel states `USING EPHEMERIS`, `USING ALMANAC`, and `ORBIT DATA NOT AVAILABLE`: the application can use precise data when available and fall back to the almanac for prediction.
 
-The NAV decoder at about `$0928FC` expands the transmitted ten-bit week approximately as:
+A shared record holds the eight Klobuchar coefficients, the GPS-to-UTC polynomial, current and future leap seconds, and their reference week/day fields. The firmware even maintains a checksum over this database.
+
+## Turning broadcast parameters into a satellite position
+
+The ephemeris routine around `$09C816` follows the GPS broadcast model closely enough to recognize equation by equation:
+
+```text
+time and broadcast ephemeris
+           |
+           v
+wrap time from TOE to +/- half a GPS week
+           |
+           v
+mean motion and mean anomaly
+           |
+           v
+iterative solution of Kepler's equation
+           |
+           v
+true anomaly and argument of latitude
+           |
+           v
+harmonic corrections to latitude, radius, and inclination
+           |
+           v
+orbital-plane coordinates -> Earth-fixed X, Y, Z
+           |
+           `-> optional velocity X, Y, Z
+```
+
+Time from ephemeris reference is wrapped at ±302,400 seconds using the 604,800-second GPS week. The routine solves `E - e sin(E) = M`, applies the six harmonic correction terms, includes inclination and node rates, and rotates the result into Earth-centred, Earth-fixed coordinates. A separate routine near `$09C372` performs the simpler almanac propagation.
+
+The constants authenticate the interpretation. `6378137` and `0.00669437999...` are the WGS-84 semi-major axis and eccentricity squared. The stored Earth-rotation value, `2.32115234247e-5` semicircles per second, becomes approximately `7.292115147e-5` radians per second after multiplication by pi. Angles are commonly retained in semicircles, matching the GPS broadcast convention.
+
+## Satellite time is modelled as carefully as position
+
+The clock-correction path near `$09AFFE` evaluates the broadcast polynomial:
+
+```text
+AF0 + AF1 × dt + AF2 × dt^2
+```
+
+It also incorporates `TGD` and the relativistic eccentric-orbit correction:
+
+```text
+delta_tr = F × e × sqrt(A) × sin(E)
+F = -4.442809305e-10
+```
+
+The Klobuchar routine near `$09AE68` is similarly recognizable. It computes the ionospheric pierce point, clamps its latitude to ±0.416 semicircles, derives local time, forms amplitude and period from `ALPHA0..3` and `BETA0..3`, and uses the standard daytime polynomial. One apparent period-floor comparison remains worth checking against the last undecoded VM comparison details before claiming that FTS deliberately departed from the usual model.
+
+Together, these routines show that the observation model includes geometric range, satellite clock drift, relativistic correction, group delay, ionosphere, and Earth rotation during signal flight.
+
+## Solving the receiver position
+
+The position procedure near `$098088` uses four satellites to solve four unknowns: receiver latitude, longitude, height, and clock/range bias. It begins with a current geodetic estimate, converts it to WGS-84 Earth-centred coordinates, predicts ranges to the selected satellites, and corrects for Earth rotation during each signal's transit time.
+
+For every satellite it forms a residual and one row of a 4×4 geometry matrix. The fourth element is one, corresponding to receiver clock bias. A reusable matrix package then solves the correction:
+
+```text
+observed ranges - modelled ranges -> residual vector r
+geometry partial derivatives      -> matrix H
+
+position/clock correction         -> delta-x = inverse(H) × r
+```
+
+The solution updates latitude, longitude, height, and clock bias, then iterates. This is a proper GPS navigation solution rather than a rough geometric shortcut.
+
+The supporting numerical routines include matrix-vector multiplication around `$0035FE`, 4×4 multiplication around `$003766`, inversion around `$003AA2`, and transpose around `$003E8A`. Their reuse is another sign that the original software was designed as a structured numerical application.
+
+## Geometry quality and stationary operation
+
+After solving the fix, the program forms the usual covariance-like geometry matrix:
+
+```text
+Q = inverse(transpose(H) × H)
+```
+
+and derives PDOP, HDOP, VDOP, and TDOP from its diagonal terms. The values at `$42FD`, `$4305`, `$430D`, and `$4315` are independently confirmed by the display code. PDOP is compared with the user's acceptance criterion, so satellite geometry affects whether the receiver trusts a fix.
+
+Accepted positions feed sums and squared sums of latitude, longitude, and altitude. For a stationary timing receiver this averaging is valuable: a better antenna-position estimate reduces the coupling between position error and the clock solution.
+
+The scheduler also advances some predicted satellite events by 86,160 seconds—23 h 56 min—until they lie in the future. That is close to a sidereal day and strongly suggests reuse of daily satellite-geometry recurrence. The value and behavior are confirmed; the astronomical intent remains a high-confidence interpretation rather than a recovered FTS name.
+
+## Week numbers, MJD, and a corrected rollover story
+
+The receiver maintains an expanded GPS week and computes:
+
+```text
+MJD = GPS_week × 7 + day_of_week + 44244
+```
+
+`44244` is the Modified Julian Date of the GPS epoch, 6 January 1980. The calendar routine starts at the MJD epoch, 17 November 1858, and applies the full Gregorian divisible-by-4/100/400 leap-year rule.
+
+More surprisingly, the 1987 NAV decoder anticipates the first ten-bit GPS week rollover:
 
 ```text
 if received_week <= 453:
@@ -40,69 +120,4 @@ else:
     expanded_week = received_week
 ```
 
-It also increments the expanded week when seconds-of-week crosses 604800.
-
-This **supersedes an earlier tentative explanation** of the receiver's reported 1999 rollover trouble: this ROM revision deliberately handles the main ten-bit rollover. A different firmware revision or another truncated week field—UTC/leap-second or almanac fields are candidates—would be required to explain such a failure.
-
-## Orbit propagation and position solution
-
-### Satellite orbit and clock
-
-The ephemeris propagator at about `$09C816` follows the broadcast GPS model:
-
-```text
-tk = wrap_half_week(t - TOE)
-mean motion = nominal(sqrt(A)) + delta-n
-M = M0 + mean_motion * tk
-solve E - e*sin(E) = M iteratively
-derive true anomaly and argument of latitude
-apply CUS/CUC, CRS/CRC, CIS/CIC corrections
-derive corrected radius, inclination and node
-transform orbital-plane coordinates to ECEF X,Y,Z
-optionally derive Vx,Vy,Vz
-```
-
-The half-week wrap uses ±302400 s and 604800 s. A separate, simplified almanac propagator is at about `$09C372`.
-
-The satellite-clock path around `$09AFFE` evaluates:
-
-```text
-AF0 + AF1*dt + AF2*dt^2
-```
-
-with `TGD` and the relativistic eccentric-orbit term:
-
-```text
-delta_tr = F * e * sqrt(A) * sin(E)
-F = -4.442809305e-10
-```
-
-**Confirmed:** the Klobuchar ionosphere routine at about `$09AE68` follows the broadcast equation, including `psi = 0.0137/(E+0.11)-0.022`, the ±0.416 semicircle pierce-point latitude clamp, local-time wrap, and the daytime polynomial. One apparent period-limit comparison should be rechecked against VM comparison semantics before claiming that FTS used a nonstandard minimum.
-
-### Receiver position and DOP
-
-The solver around `$098088` is an iterative, exactly determined four-satellite solution. It converts a latitude/longitude/height estimate to WGS-84 ECEF, predicts each range, applies Earth-rotation correction during signal transit, forms a 4×4 design matrix and residual vector, and solves for corrections to latitude, longitude, height, and receiver clock/range bias.
-
-```text
-four observations + four satellite states
-                    |
-                    v
-       predicted geometric ranges
-       + Earth rotation during flight
-       + satellite/propagation corrections
-                    |
-                    v
-        H and observation residuals
-                    |
-                    v
-             delta-x = H^-1 r
-                    |
-                    v
-       update position and clock; iterate
-```
-
-WGS-84 constants `a = 6378137 m` and `e^2 = 0.00669437999...` are present. Angles are commonly represented in semicircles, explaining explicit factors of pi. The Earth-rotation constant is stored as `2.32115234247e-5` semicircles/s, equal after multiplication by pi to approximately `7.292115147e-5 rad/s`.
-
-Reusable native/P-code numerical routines include matrix-vector multiplication at `$0035FE`, 4×4 multiplication at `$003766`, inversion at `$003AA2`, and transpose at `$003E8A`.
-
-After the fix, the firmware derives `Q = inverse(H^T H)` and computes PDOP, HDOP, VDOP, and TDOP. The reported PDOP participates in acceptance criteria. Accepted stationary fixes feed sums and squared sums for position averaging and scatter estimates.
+Normal operation also increments the expanded week when seconds-of-week crosses 604,800. An early hypothesis blamed the main ten-bit week field for reported 1999 failures, but this ROM explicitly handles that transition. If an FTS 8400 revision did fail then, another firmware version or a narrower almanac/UTC week field is a better place to look.

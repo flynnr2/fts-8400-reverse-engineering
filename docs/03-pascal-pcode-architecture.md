@@ -1,53 +1,69 @@
-# Pascal/P-code Architecture
+# The Pascal/P-code Architecture
 
 [Project index](../README.md) · [Complete edition](How%20the%20FTS%208400%20Worked%20-%20Complete.md)
 
-### Division of responsibility
+## Why the application ROM looked wrong
+
+Once the EPROM byte lanes were interleaved, the reset and hardware code disassembled normally. Much of the application ROM did not. Repeated sequences such as `JSR $2144` provided the clue: `$2144` is not an ordinary application routine but an entry into a bytecode interpreter.
+
+The 68000 return address becomes the P-code instruction pointer. Procedure metadata immediately following the call describes parameter storage and lexical level; a second entry at `$2164` also allocates local storage. The interpreter itself is centred around `$002000`.
+
+This hybrid arrangement divides the firmware cleanly:
 
 ```text
- Native 68000                         Pascal-family P-code
- ----------------                    --------------------
- reset and exceptions                executive state machines
- interrupt handlers                  acquisition/tracking policy
- memory and ROM tests                NAV database management
- peripheral access                   orbit and position algorithms
- software floating point             timing policy and averaging
- matrix/numerical primitives         menus, reports, diagnostics
- VM interpreter                      communications control
+native 68000                         Pascal-family P-code
+-------------                        --------------------
+reset and exceptions                 executive state machines
+interrupt handlers                   tracking and NAV policy
+ROM and RAM tests                    orbit and position algorithms
+peripheral access                    timing and averaging policy
+floating-point primitives            menus and reports
+matrix and maths helpers             communications control
+P-code interpreter                   service workflows
 ```
 
-The VM interpreter is centered around `$002000`. Ordinary compiled procedures enter through `$002144`; procedures needing local allocation also use `$002164`. The application's outermost environment is established at `$002102` by a call at `$00103A`; its header allocates `$5800` (22,528) bytes of working space.
+## Why it is Pascal
 
-### Why the language identification is strong
+The strongest evidence is not the style of the bytecode but the handling of nested scope. Locations `$4000`, `$4004`, `$4008`, and `$400C` hold pointers to active frames at lexical levels 0 through 3. Procedure entry saves and replaces the relevant pointer; return restores it. Procedures at levels 1, 2, and 3 are all present.
 
-**Confirmed:** RAM locations `$4000`, `$4004`, `$4008`, and `$400C` form a lexical display pointing to current activation records at nesting levels 0–3. Procedure entry replaces the appropriate display entry and return restores it. Identified procedures use lexical levels 1, 2, and 3. This is characteristic compiled-Pascal machinery.
+That lexical-display mechanism is characteristic of compiled Pascal. Pascal strings, local-frame allocation, nested procedures, and the separation between imported linkage stubs and procedure bodies reinforce the identification.
 
-The ROM contains about 382 recognizable P-code procedures: 360 in the large ROM and 22 in the low ROM. About 60 runs of absolute-jump linkage stubs resemble separately linked units or modules. The latter count is architectural evidence, not proof that the original source contained exactly 60 named Pascal units.
+About 382 procedure entries can be recognized—360 in the large ROM and 22 in the low ROM. Roughly 60 runs of absolute-jump stubs look like per-unit import tables. They show that the source was modular, although they do not prove the original source contained exactly 60 named units.
 
-The exact compiler is unresolved. Similarity to period Microware Pascal technology is plausible, but the ROM is a bare-metal FTS runtime, not a conventional OS-9 image.
+The compiler itself remains unidentified. Period Microware Pascal systems used a broadly similar mixture of P-code, nested scopes, native support, floating point, and I/O routines, but this image has its own bare-metal startup and interrupt architecture. It is not a conventional OS-9 system.
 
-### Instruction model
+## A compact instruction set
 
-The recovered major opcode families are:
+The bytecode was designed to make common operations cheap in ROM space:
 
 ```text
-$00          invalid -> TRAP #5
+$00          invalid instruction -> TRAP #5
 $01          NOP
-$02          execute embedded native 68000 helper
+$02          execute an embedded native 68000 helper
 $03 xx       extended primitive
-$04-$07 xx   push 10-bit unsigned constant
-$08-$0F ...  reference/block/address forms [partly decoded]
+$04-$07 xx   push a 10-bit unsigned constant
+$08-$0F ...  block, reference, and address forms
 $10-$17 xx   relative branch
 $18-$1F xx   branch if false
-$20-$3F      direct primitive operations
-$40-$7F      push integer 0..63
+$20-$3F      direct primitive operation
+$40-$7F      push the integer 0..63
 $80-$FF ...  lexical variable load/store/reference family
 ```
 
-The variable family encodes lexical level and byte, word, longword, or eight-byte object size. Primitive operations include 32-bit integer arithmetic and comparisons, 64-bit real arithmetic and comparisons, call/return, stack allocation, case dispatch, Pascal string literals, block comparison, conversions, and inline text output.
+The variable family encodes lexical level and object size. Byte, word, longword, and eight-byte values can be loaded or stored. The primitive library covers 32-bit arithmetic and comparisons, eight-byte real arithmetic and comparisons, call and return, stack allocation, `CASE`, loop control, conversion, block comparison, string literals, and compact inline output.
 
-**Caution:** obscure indexed/reference forms are not fully decoded. A linear bytecode listing can mistake their inline operands for opcodes. The architectural interpretation and algorithms in this report were accepted only where constants, data flow, and coherent control flow agreed; this document does not claim a complete 256-entry VM specification.
+This is enough to reconstruct coherent procedures and algorithms, but not yet enough to publish a perfect 256-entry opcode manual. Some rare indexed and reference forms have inline operands that a linear decoder can mistake for opcodes. Address-level conclusions were therefore accepted only when instruction flow, constants, variable use, and the surrounding algorithm agreed.
 
-### Native escapes and numerical library
+## Native code where it matters
 
-Opcode `$02` temporarily executes embedded 68000 code and returns to the interpreter. At least 26 procedures reach such an escape. The native runtime supplies eight-byte floating-point operations, square root, sine/cosine, fractional/modulo operations, and matrix routines. **Confirmed:** the eight-byte constants and exponent/mantissa behavior are IEEE-754-like double precision; exact compiler-level conformance in every exceptional case has not been tested.
+Opcode `$02` aligns the instruction stream, executes embedded 68000 code, and returns to P-code. At least 26 procedure paths use such an escape. Larger native services are also reached through linkage stubs.
+
+The numerical library is particularly important. It supplies eight-byte floating-point arithmetic, square root, sine and cosine, fractional/modulo operations, and reusable 4×4 matrix functions. Constants and exponent/mantissa handling are consistent with an IEEE-754-like double representation, although every exceptional case has not been tested.
+
+That library explains how a 68000-class processor without an identified FPU could carry out orbit propagation, geodesy, clock modelling, ionosphere correction, regression, and matrix inversion. The VM did not make the receiver mathematically primitive; it gave a large mathematical program a compact, structured home.
+
+## The application as a recovered program
+
+The outer Pascal environment begins through a call at `$00103A`, reserves `$5800` bytes, performs the application self-test, and enters a permanent cooperative loop. Imported procedure stubs around `$0FF2-$1034` dispatch to the major subsystems.
+
+The most useful way to read this firmware is consequently not as thousands of anonymous 68000 instructions. It is closer to a lost Pascal application with a surviving runtime. Procedure names have to be reconstructed from their inputs, outputs, constants, strings, and callers, but the original design boundaries remain surprisingly visible.
