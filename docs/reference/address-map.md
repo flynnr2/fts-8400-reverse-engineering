@@ -6,19 +6,19 @@ This is the address-level reference behind the narrative chapters. Names are rec
 
 ## Main memory and I/O regions
 
-| Address range          | Recovered function                                     | Confidence                                                     |
-| ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| `$000000-$003FFF`      | Native ROM: boot, runtime, VM, maths, and drivers      | Confirmed                                                      |
-| `$004000-$007FFF`      | First 16 KiB RAM bank                                  | Confirmed                                                      |
-| `$008000-$013FFF`      | I/O and unused space between the RAM banks             | Confirmed as non-RAM; individual holes are not all decoded     |
-| `$00A001-$00A00F`, odd | TMS9914A GPIB registers                                | Confirmed                                                      |
-| `$00A101/$00A103`      | ACIA-like serial control/status and data               | High confidence                                                |
-| `$00A200`              | 16-bit DAC                                             | Confirmed                                                      |
-| `$00A3xx`              | TIC and programmable output-phase hardware             | Function confirmed; individual register naming remains partial |
-| `$00A4xx-$00A7xx`      | Receiver, time, status, diagnostic, and control blocks | Partly understood                                              |
-| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering         | Confirmed                                                      |
-| `$014000-$017FFF`      | Second 16 KiB RAM bank                                 | Confirmed                                                      |
-| `$090000-$09FFFF`      | Main application ROM                                   | Confirmed                                                      |
+| Address range          | Recovered function                                        | Confidence                                                     |
+| ---------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| `$000000-$003FFF`      | Native ROM: boot, runtime, VM, maths, and drivers         | Confirmed                                                      |
+| `$004000-$007FFF`      | First 16 KiB RAM bank                                     | Confirmed                                                      |
+| `$008000-$013FFF`      | I/O and unused space between the RAM banks                | Confirmed as non-RAM; individual holes are not all decoded     |
+| `$00A001-$00A00F`, odd | TMS9914A GPIB registers                                   | Confirmed                                                      |
+| `$00A101/$00A103`      | RS-232 Port 1, MC6850-compatible ACIA data/control/status | Confirmed                                                      |
+| `$00A200`              | 16-bit DAC                                                | Confirmed                                                      |
+| `$00A3xx`              | TIC and programmable output-phase hardware                | Function confirmed; individual register naming remains partial |
+| `$00A4xx-$00A7xx`      | Receiver, time, status, diagnostic, and control blocks    | Partly understood                                              |
+| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering            | Confirmed                                                      |
+| `$014000-$017FFF`      | Second 16 KiB RAM bank                                    | Confirmed                                                      |
+| `$090000-$09FFFF`      | Main application ROM                                      | Confirmed                                                      |
 
 ## Native runtime and application routines
 
@@ -83,3 +83,17 @@ This is the address-level reference behind the narrative chapters. Names are rec
 | `$A313`             | Timing latch/control strobes  | Function confirmed |
 | `$A315`             | Timing status                 | High confidence    |
 | `$A31B/$A31D/$A31F` | Three-byte TIC coarse count   | High confidence    |
+
+## Serial hardware landmarks
+
+| Address / vector      | Recovered meaning                                        | Confidence                                |
+| --------------------: | -------------------------------------------------------- | ----------------------------------------- |
+| `$A101`               | RS-232 Port 1 MC6850-compatible ACIA data register       | Confirmed                                 |
+| `$A103`               | Port 1 ACIA status/control; master reset and RTS control | Confirmed for MC6850-compatible semantics |
+| `$C011`               | RS-232 Port 2 MC68901 USART data register                | Confirmed                                 |
+| `$C013/$C015`         | Port 2 USART transmit/receive status                     | Confirmed                                 |
+| `$C017`               | Port 2 USART control                                     | Confirmed                                 |
+| `$C01D`               | Timer C data; Port 1 baud-clock programming              | High confidence                           |
+| `$C01B`               | Timer D data; Port 2 baud-clock programming              | High confidence                           |
+| vector `$47`          | MFP GPIP5, Port 1 ACIA interrupt                         | High confidence                           |
+| vectors `$4A` / `$4C` | Port 2 USART transmit-empty / receive-full interrupts    | Confirmed                                 |
