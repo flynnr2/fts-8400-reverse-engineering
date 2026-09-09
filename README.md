@@ -32,6 +32,7 @@ The meanings of `NP` and `SP` have not yet been established.
 ## Technical reference
 
 - [Address map](docs/reference/address-map.md)
+- [Pascal VM opcode reference](docs/reference/vm-opcodes.md)
 - [Key constants](docs/reference/constants.md)
 - [Recovered data structures](docs/reference/recovered-data-structures.md)
 

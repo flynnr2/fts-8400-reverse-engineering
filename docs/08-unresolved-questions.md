@@ -2,7 +2,7 @@
 
 [Project index](../README.md) · [Complete edition](How%20the%20FTS%208400%20Worked%20-%20Complete.md)
 
-The broad design is now understandable. Most remaining questions lie where software-visible values meet custom hardware or where the bytecode decoder reaches uncommon instruction forms.
+The broad design is now understandable. Most remaining questions lie where software-visible values meet custom hardware, in edge-case runtime semantics, or in the provenance of the Pascal toolchain.
 
 ## Timing hardware
 
@@ -35,7 +35,11 @@ This ROM expands the principal ten-bit GPS week across the 1999 rollover. Report
 
 ## VM and provenance
 
-Rare indexed/reference P-code forms remain imperfectly decoded, so a supposedly complete opcode table would be premature. The recovered algorithms do not depend on guessing those forms, but finishing them would make automated call and data-flow analysis more reliable.
+The P-code byte fields, primitive dispatch table, indexed operations, and
+reference/update convention are now decoded and recorded in the
+[opcode reference](reference/vm-opcodes.md). The remaining VM questions concern
+original mnemonic names, reserved size combinations, unusual block lengths,
+and floating-point edge behavior rather than instruction boundaries.
 
 The exact Pascal compiler/runtime lineage is also unknown. Similarities to period Microware technology are suggestive, not conclusive. No evidence yet expands the `NP` and `SP` version labels.
 

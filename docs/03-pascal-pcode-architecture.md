@@ -52,7 +52,20 @@ $80-$FF ...  lexical variable load/store/reference family
 
 The variable family encodes lexical level and object size. Byte, word, longword, and eight-byte values can be loaded or stored. The primitive library covers 32-bit arithmetic and comparisons, eight-byte real arithmetic and comparisons, call and return, stack allocation, `CASE`, loop control, conversion, block comparison, string literals, and compact inline output.
 
-This is enough to reconstruct coherent procedures and algorithms, but not yet enough to publish a perfect 256-entry opcode manual. Some rare indexed and reference forms have inline operands that a linear decoder can mistake for opcodes. Address-level conclusions were therefore accepted only when instruction flow, constants, variable use, and the surrounding algorithm agreed.
+Early analysis stopped short of a complete table because rare indexed and
+reference forms have contextual operands that a linear decoder can mistake for
+opcodes. The interpreter has since been decoded at the byte-field level. The
+[opcode reference](reference/vm-opcodes.md) records every top-level family, all
+49 primitive-table slots, the lexical-variable bit fields, loop forms, block
+operations, and the contextual-zero deferred-store convention. Original
+compiler mnemonic names and a few reserved edge cases remain unknown, but the
+instruction boundaries used by compiler-generated code are now deterministic.
+
+The decisive cross-check is the Trimble 4000SX runtime: its public low-ROM
+image is byte-identical to this firmware from `$002000` through `$003FF7`,
+apart from the final eight integrity bytes. The two products therefore share
+the interpreter and numerical runtime, rather than merely using similar
+Pascal VM designs.
 
 ## Native code where it matters
 
