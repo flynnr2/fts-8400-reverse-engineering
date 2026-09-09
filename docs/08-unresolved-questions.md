@@ -27,7 +27,7 @@ The software proves that `$A200` is a 16-bit DAC driven by the internal carrier-
 
 ## Protocols and historical behavior
 
-The transport layer for two serial ports and GPIB is substantially mapped, but the full command grammar has not been reconstructed. The compact six-byte real-number interchange format is also unknown.
+The serial hardware is now largely identified: Port 1 is the MC6850-compatible ACIA driven from Timer C and entering through GPIP5; Port 2 is the MC68901 USART driven from Timer D. What remains is the protocol layer. The full command grammar, the intended meaning of `CONTROL CHARS`, the compact six-byte real-number format, the actual MFP clock and baud-rate table, and the exact purpose of Port 1's RTS/transmit-control manipulation are still unknown.
 
 OMEGA appears as a genuine time-source selection, but its complete signal and software path remains to be traced.
 
