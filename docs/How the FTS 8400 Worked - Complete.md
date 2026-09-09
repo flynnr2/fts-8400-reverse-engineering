@@ -171,22 +171,22 @@ The board photograph independently agrees with the software: it shows a Hitachi 
 
 The 8400 does not present the Pascal application with one continuous RAM region. Startup clears and tests two 16 KiB windows at `$004000-$007FFF` and `$014000-$017FFF`, separated by I/O and unused address space.
 
-| Address range          | Recovered function                                         | Status                                                         |
-| ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
-| `$000000-$003FFF`      | Native bootstrap, runtime, VM, maths, and drivers; U36/U44 | Confirmed                                                      |
-| `$004000-$007FFF`      | First 16 KiB RAM bank                                      | Confirmed by startup test and clear                            |
-| `$008000-$013FFF`      | Non-RAM space containing I/O decodes and unused regions    | Confirmed as a RAM discontinuity; not every address is decoded |
-| `$00A001-$00A00F`, odd | TMS9914A IEEE-488 registers                                | Confirmed                                                      |
-| `$00A101/$00A103`      | ACIA-like serial control/status and data                   | High confidence                                                |
-| `$00A200`              | 16-bit DAC                                                 | Confirmed                                                      |
-| `$00A3xx`              | Time-interval and output-phase hardware                    | Function confirmed; individual registers only partly named     |
-| `$00A4xx`              | Receiver/timing hardware                                   | Unresolved                                                     |
-| `$00A5xx`              | Clock/time interface                                       | High confidence                                                |
-| `$00A6xx`              | Status, configuration, and diagnostic inputs               | High confidence                                                |
-| `$00A7xx`              | Custom control/reset interface                             | Unresolved                                                     |
-| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering             | Confirmed                                                      |
-| `$014000-$017FFF`      | Second 16 KiB RAM bank                                     | Confirmed by startup test and clear                            |
-| `$090000-$09FFFF`      | Main application ROM; U37/U45                              | Confirmed                                                      |
+| Address range          | Recovered function                                                                 | Status                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `$000000-$003FFF`      | Native bootstrap, runtime, VM, maths, and drivers; U36/U44                         | Confirmed                                                      |
+| `$004000-$007FFF`      | First 16 KiB RAM bank                                                              | Confirmed by startup test and clear                            |
+| `$008000-$013FFF`      | Non-RAM space containing I/O decodes and unused regions                            | Confirmed as a RAM discontinuity; not every address is decoded |
+| `$00A001-$00A00F`, odd | TMS9914A IEEE-488 registers                                                        | Confirmed                                                      |
+| `$00A101/$00A103`      | RS-232 Port 1, MC6850-compatible ACIA data/control/status                          | Confirmed                                                      |
+| `$00A200`              | 16-bit DAC                                                                         | Confirmed                                                      |
+| `$00A3xx`              | Time-interval and output-phase hardware                                            | Function confirmed; individual registers only partly named     |
+| `$00A4xx`              | Receiver/timing hardware                                                           | Unresolved                                                     |
+| `$00A5xx`              | Clock/time interface                                                               | High confidence                                                |
+| `$00A6xx`              | Status, configuration, and diagnostic inputs                                       | High confidence                                                |
+| `$00A7xx`              | Custom control/reset interface                                                     | Unresolved                                                     |
+| `$00C011-$00C03F`, odd | MC68901, including the RS-232 Port 2 USART, with inverted register-select ordering | Confirmed                                                      |
+| `$014000-$017FFF`      | Second 16 KiB RAM bank                                                             | Confirmed by startup test and clear                            |
+| `$090000-$09FFFF`      | Main application ROM; U37/U45                                                      | Confirmed                                                      |
 
 The VM knows about the discontinuity. When a calculated Pascal address crosses the first bank, the interpreter adds `$C000` and lands in the second. The application can therefore use a convenient logical memory model even though the PCB presents two separated physical banks.
 
@@ -360,11 +360,33 @@ The remaining vectors in that range use a default handler. Timer A and Timer B o
 
 Timer B maintains a hierarchy of software time fields and periodically copies them to hardware around `$A500`. That makes the `$A5xx` block a clock/time interface with high confidence, although its full register naming remains open.
 
-### Two serial paths and IEEE-488
+### Two RS-232 ports and IEEE-488
 
-One serial channel uses the MC68901 USART. A second interface at `$A101/$A103` behaves like a Motorola 6850-compatible ACIA: its status bits are tested as interrupt, transmitter-ready, receiver-ready, and error/control conditions, while the companion address carries data. The code proves there are two distinct serial paths, but it does not yet tie each device confidently to the physical `PORT 1` and `PORT 2` labels.
+The rear DB-25s are not implemented by two interchangeable UARTs. Further tracing assigns them confidently:
 
-Both paths use RAM buffering and interrupt-driven producer/consumer state. The firmware can report `PORT 1 NOT READY` and `PORT 2 NOT READY`, and the menu offers conventional framing choices. It also supports two binary floating-point transfer formats: the native eight-byte representation and a compact six-byte form that has not yet been decoded.
+| Rear port      | Hardware path            | CPU addresses                        | Baud-clock source |
+| -------------- | ------------------------ | ------------------------------------ | ----------------- |
+| `RS232 Port 1` | MC6850-compatible ACIA   | `$A101` data; `$A103` status/control | MC68901 Timer C   |
+| `RS232 Port 2` | MC68901's built-in USART | `$C011` data; `$C013/$C015/$C017`    | MC68901 Timer D   |
+
+The Port 1 identification is particularly strong. When its parameters change, firmware first sets the low two bits of the saved control byte and writes it to `$A103`, then writes the actual configuration. On an MC6850, `CR1:CR0 = 11` is the master-reset command. The same code tests bit 1 as transmitter-data-register empty and bit 0 as receiver-data-register full, then reads or writes `$A101` exactly as an ACIA data register.
+
+Port 2 uses the 68901 USART directly: the transmit and receive paths wait on bit 7 in `$C013` and `$C015`, respectively, then transfer a byte through `$C011`. Its framing and baud settings are programmed independently from Port 1. Timer C's data register at `$C01D` is adjusted with the Port 1 ACIA configuration; Timer D at `$C01B` is adjusted with the Port 2 USART configuration. The 68901 therefore provides both its own serial port and the baud clock for the separate ACIA.
+
+The boot values for Timer C and D are both eight, so both ports start at the same rate. If the MFP were driven from the conventional 2.4576 MHz serial clock, the arithmetic would imply a 4800-baud default and a likely 300–9600 baud selection range. That clock has not been proved, so the actual baud-rate table remains an informed hypothesis rather than a confirmed specification.
+
+Both ports use RAM buffering and interrupt-driven producer/consumer state during normal operation. Port 2 uses the MFP's transmit-buffer-empty and receive-buffer-full vectors, `$4A` and `$4C`. Port 1's ACIA interrupt enters through MFP GPIP5 at vector `$47`.
+
+The front-panel menus expose independent framing choices for both connectors:
+
+```text
+7-EVEN-2   7-ODD-2    7-EVEN-1   7-ODD-1
+8-NONE-2   8-NONE-1   8-EVEN-1   8-ODD-1
+```
+
+The firmware also saves the Port 1 control byte and sometimes ORs in `$20` before rewriting `$A103`. That is in the MC6850's RTS/transmit-control field, showing that Port 1 has software-controlled handshake or control-line behavior. Whether FTS uses it as conventional RTS/CTS flow control or for another purpose remains unresolved.
+
+Both ports can report `PORT 1 NOT READY` or `PORT 2 NOT READY`. The machine-readable interface supports the native eight-byte real representation and a compact six-byte form that has not yet been decoded.
 
 The TMS9914A GPIB controller occupies odd addresses `$A001-$A00F`. Its setup includes configurable addressing and `TALK_ONLY`, and GPIP6 carries its interrupt into the MC68901. The ROM's `GPIB NOT READY` path and the board photograph independently confirm the identification.
 
@@ -372,7 +394,9 @@ The TMS9914A GPIB controller occupies odd addresses `$A001-$A00F`. Its setup inc
 
 The reporting system is shared rather than duplicated for each interface. A native character routine near `$09716A` fans output to whichever serial ports or GPIB destinations are enabled. Helpers emit common punctuation, spaces, and line endings. `TRAP #1`, handled at `$0971BC`, sends inline literal text efficiently without making the interpreter construct it character by character.
 
-The same application produces tracking reports, navigation-data dumps, position and DOP results, time/frequency reports, scheduled-observation output, and configuration responses. A complete external command grammar is still missing, but the transport and formatting architecture are clear.
+The same application produces tracking reports, navigation-data dumps, position and DOP results, time/frequency reports, scheduled-observation output, and configuration responses. Output destinations can be selected independently among GPIB, Port 1, and Port 2.
+
+The ROM also contains `PORT1 CONTROL`, `CHARS ENTERED`, `CONTROL CHARS`, `CC`, `ID`, `BAUD`, and `TIMER` screens. This confirms a higher-level serial-input and remote-control layer, but not yet whether its control characters are XON/XOFF, command framing, or both. A complete external command grammar is still missing.
 
 ### The front panel as another task
 
@@ -784,7 +808,7 @@ The software proves that `$A200` is a 16-bit DAC driven by the internal carrier-
 
 ### Protocols and historical behavior
 
-The transport layer for two serial ports and GPIB is substantially mapped, but the full command grammar has not been reconstructed. The compact six-byte real-number interchange format is also unknown.
+The serial hardware is now largely identified: Port 1 is the MC6850-compatible ACIA driven from Timer C and entering through GPIP5; Port 2 is the MC68901 USART driven from Timer D. What remains is the protocol layer. The full command grammar, the intended meaning of `CONTROL CHARS`, the compact six-byte real-number format, the actual MFP clock and baud-rate table, and the exact purpose of Port 1's RTS/transmit-control manipulation are still unknown.
 
 OMEGA appears as a genuine time-source selection, but its complete signal and software path remains to be traced.
 
@@ -806,19 +830,19 @@ This is the address-level reference behind the narrative chapters. Names are rec
 
 ### Main memory and I/O regions
 
-| Address range          | Recovered function                                     | Confidence                                                     |
-| ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| `$000000-$003FFF`      | Native ROM: boot, runtime, VM, maths, and drivers      | Confirmed                                                      |
-| `$004000-$007FFF`      | First 16 KiB RAM bank                                  | Confirmed                                                      |
-| `$008000-$013FFF`      | I/O and unused space between the RAM banks             | Confirmed as non-RAM; individual holes are not all decoded     |
-| `$00A001-$00A00F`, odd | TMS9914A GPIB registers                                | Confirmed                                                      |
-| `$00A101/$00A103`      | ACIA-like serial control/status and data               | High confidence                                                |
-| `$00A200`              | 16-bit DAC                                             | Confirmed                                                      |
-| `$00A3xx`              | TIC and programmable output-phase hardware             | Function confirmed; individual register naming remains partial |
-| `$00A4xx-$00A7xx`      | Receiver, time, status, diagnostic, and control blocks | Partly understood                                              |
-| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering         | Confirmed                                                      |
-| `$014000-$017FFF`      | Second 16 KiB RAM bank                                 | Confirmed                                                      |
-| `$090000-$09FFFF`      | Main application ROM                                   | Confirmed                                                      |
+| Address range          | Recovered function                                        | Confidence                                                     |
+| ---------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| `$000000-$003FFF`      | Native ROM: boot, runtime, VM, maths, and drivers         | Confirmed                                                      |
+| `$004000-$007FFF`      | First 16 KiB RAM bank                                     | Confirmed                                                      |
+| `$008000-$013FFF`      | I/O and unused space between the RAM banks                | Confirmed as non-RAM; individual holes are not all decoded     |
+| `$00A001-$00A00F`, odd | TMS9914A GPIB registers                                   | Confirmed                                                      |
+| `$00A101/$00A103`      | RS-232 Port 1, MC6850-compatible ACIA data/control/status | Confirmed                                                      |
+| `$00A200`              | 16-bit DAC                                                | Confirmed                                                      |
+| `$00A3xx`              | TIC and programmable output-phase hardware                | Function confirmed; individual register naming remains partial |
+| `$00A4xx-$00A7xx`      | Receiver, time, status, diagnostic, and control blocks    | Partly understood                                              |
+| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering            | Confirmed                                                      |
+| `$014000-$017FFF`      | Second 16 KiB RAM bank                                    | Confirmed                                                      |
+| `$090000-$09FFFF`      | Main application ROM                                      | Confirmed                                                      |
 
 ### Native runtime and application routines
 
@@ -883,6 +907,20 @@ This is the address-level reference behind the narrative chapters. Names are rec
 | `$A313`             | Timing latch/control strobes  | Function confirmed |
 | `$A315`             | Timing status                 | High confidence    |
 | `$A31B/$A31D/$A31F` | Three-byte TIC coarse count   | High confidence    |
+
+### Serial hardware landmarks
+
+| Address / vector      | Recovered meaning                                        | Confidence                                |
+| --------------------: | -------------------------------------------------------- | ----------------------------------------- |
+| `$A101`               | RS-232 Port 1 MC6850-compatible ACIA data register       | Confirmed                                 |
+| `$A103`               | Port 1 ACIA status/control; master reset and RTS control | Confirmed for MC6850-compatible semantics |
+| `$C011`               | RS-232 Port 2 MC68901 USART data register                | Confirmed                                 |
+| `$C013/$C015`         | Port 2 USART transmit/receive status                     | Confirmed                                 |
+| `$C017`               | Port 2 USART control                                     | Confirmed                                 |
+| `$C01D`               | Timer C data; Port 1 baud-clock programming              | High confidence                           |
+| `$C01B`               | Timer D data; Port 2 baud-clock programming              | High confidence                           |
+| vector `$47`          | MFP GPIP5, Port 1 ACIA interrupt                         | High confidence                           |
+| vectors `$4A` / `$4C` | Port 2 USART transmit-empty / receive-full interrupts    | Confirmed                                 |
 
 ## Appendix B. Key constants
 

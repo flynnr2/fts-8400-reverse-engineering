@@ -24,22 +24,22 @@ The board photograph independently agrees with the software: it shows a Hitachi 
 
 The 8400 does not present the Pascal application with one continuous RAM region. Startup clears and tests two 16 KiB windows at `$004000-$007FFF` and `$014000-$017FFF`, separated by I/O and unused address space.
 
-| Address range          | Recovered function                                         | Status                                                         |
-| ---------------------- | ---------------------------------------------------------- | -------------------------------------------------------------- |
-| `$000000-$003FFF`      | Native bootstrap, runtime, VM, maths, and drivers; U36/U44 | Confirmed                                                      |
-| `$004000-$007FFF`      | First 16 KiB RAM bank                                      | Confirmed by startup test and clear                            |
-| `$008000-$013FFF`      | Non-RAM space containing I/O decodes and unused regions    | Confirmed as a RAM discontinuity; not every address is decoded |
-| `$00A001-$00A00F`, odd | TMS9914A IEEE-488 registers                                | Confirmed                                                      |
-| `$00A101/$00A103`      | ACIA-like serial control/status and data                   | High confidence                                                |
-| `$00A200`              | 16-bit DAC                                                 | Confirmed                                                      |
-| `$00A3xx`              | Time-interval and output-phase hardware                    | Function confirmed; individual registers only partly named     |
-| `$00A4xx`              | Receiver/timing hardware                                   | Unresolved                                                     |
-| `$00A5xx`              | Clock/time interface                                       | High confidence                                                |
-| `$00A6xx`              | Status, configuration, and diagnostic inputs               | High confidence                                                |
-| `$00A7xx`              | Custom control/reset interface                             | Unresolved                                                     |
-| `$00C011-$00C03F`, odd | MC68901 with inverted register-select ordering             | Confirmed                                                      |
-| `$014000-$017FFF`      | Second 16 KiB RAM bank                                     | Confirmed by startup test and clear                            |
-| `$090000-$09FFFF`      | Main application ROM; U37/U45                              | Confirmed                                                      |
+| Address range          | Recovered function                                                                 | Status                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `$000000-$003FFF`      | Native bootstrap, runtime, VM, maths, and drivers; U36/U44                         | Confirmed                                                      |
+| `$004000-$007FFF`      | First 16 KiB RAM bank                                                              | Confirmed by startup test and clear                            |
+| `$008000-$013FFF`      | Non-RAM space containing I/O decodes and unused regions                            | Confirmed as a RAM discontinuity; not every address is decoded |
+| `$00A001-$00A00F`, odd | TMS9914A IEEE-488 registers                                                        | Confirmed                                                      |
+| `$00A101/$00A103`      | RS-232 Port 1, MC6850-compatible ACIA data/control/status                          | Confirmed                                                      |
+| `$00A200`              | 16-bit DAC                                                                         | Confirmed                                                      |
+| `$00A3xx`              | Time-interval and output-phase hardware                                            | Function confirmed; individual registers only partly named     |
+| `$00A4xx`              | Receiver/timing hardware                                                           | Unresolved                                                     |
+| `$00A5xx`              | Clock/time interface                                                               | High confidence                                                |
+| `$00A6xx`              | Status, configuration, and diagnostic inputs                                       | High confidence                                                |
+| `$00A7xx`              | Custom control/reset interface                                                     | Unresolved                                                     |
+| `$00C011-$00C03F`, odd | MC68901, including the RS-232 Port 2 USART, with inverted register-select ordering | Confirmed                                                      |
+| `$014000-$017FFF`      | Second 16 KiB RAM bank                                                             | Confirmed by startup test and clear                            |
+| `$090000-$09FFFF`      | Main application ROM; U37/U45                                                      | Confirmed                                                      |
 
 The VM knows about the discontinuity. When a calculated Pascal address crosses the first bank, the interpreter adds `$C000` and lands in the second. The application can therefore use a convenient logical memory model even though the PCB presents two separated physical banks.
 
