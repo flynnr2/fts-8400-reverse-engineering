@@ -2,7 +2,7 @@
 
 ## A recovered software and hardware architecture
 
-[Project index](../README.md)
+[Project index](../README.md) · [VM opcode reference](reference/vm-opcodes.md)
 
 This is the complete narrative edition of the FTS 8400 reverse-engineering results. It follows the investigation from the four physical EPROMs through the Pascal virtual machine, GPS navigation solution, and precision timing system. Detailed addresses, constants, and reconstructed data layouts are retained as appendices rather than interrupting the main account.
 
