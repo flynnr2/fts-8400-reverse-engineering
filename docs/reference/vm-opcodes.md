@@ -45,60 +45,60 @@ stack convention, where `b` is at the top of the stack.
 
 ## Top-level decoding
 
-| Encoding | Reconstructed operation | Operand / effect |
-| --- | --- | --- |
-| `$00` | `INVALID` | Raises `TRAP #5` when decoded as an opcode. It also has a contextual role after certain reads; see below. |
-| `$01` | `NOP` | No effect. |
-| `$02` | `INLINE.68K` | Align VPC with `(VPC+1)&~1`, then execute 68000 code there. The helper must set `A5` to the following bytecode before its terminating `RTS`. |
-| `$03 zz` | `EXT zz` | Dispatch primitive-table slot `$00-$30`; values above `$30` raise `TRAP #5`. Slots `$00-$1F` alias `$20-$3F`; `$20-$30` are the actual extensions. |
-| `$04-$07 xx` | `PUSH.U10` | Push unsigned `((opcode & 3)<<8) | xx`. |
-| `$08-$0B dddd nnnn` | `READ.BLOCK.l` | Copy `nnnn` bytes from lexical level `l=opcode&3`, displacement `dddd`, to the stack. Values are copied as words, so the demonstrated form requires a positive even length. |
-| `$0C-$0F dddd nnnn` | `WRITE.BLOCK.l` | Copy `nnnn` bytes from the stack to lexical level `l=opcode&3`, displacement `dddd`. |
-| `$10-$17 yy` | `BR s11` | Add the signed 11-bit displacement `((opcode&7)<<8)|yy` to VPC after the operand. |
-| `$18-$1F yy` | `BRZ s11` | Pop a long flag and take the same relative branch when its low byte is zero. |
-| `$20-$3F` | direct primitives | See the next table. |
-| `$40-$7F` | `PUSH.U6` | Push `opcode & $3F`. |
-| `$80-$FF` | lexical variable family | Compact read/write, indexed, size, scope, and displacement fields; decoded below. |
+| Encoding            | Reconstructed operation | Operand / effect                                                                                                                                                            |
+| ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$00`               | `INVALID`               | Raises `TRAP #5` when decoded as an opcode. It also has a contextual role after certain reads; see below.                                                                   |
+| `$01`               | `NOP`                   | No effect.                                                                                                                                                                  |
+| `$02`               | `INLINE.68K`            | Align VPC with `(VPC+1)&~1`, then execute 68000 code there. The helper must set `A5` to the following bytecode before its terminating `RTS`.                                |
+| `$03 zz`            | `EXT zz`                | Dispatch primitive-table slot `$00-$30`; values above `$30` raise `TRAP #5`. Slots `$00-$1F` alias `$20-$3F`; `$20-$30` are the actual extensions.                          |
+| `$04-$07 xx`        | `PUSH.U10`              | Push unsigned `((opcode & 3)<<8) \| xx`.                                                                                                                                    |
+| `$08-$0B dddd nnnn` | `READ.BLOCK.l`          | Copy `nnnn` bytes from lexical level `l=opcode&3`, displacement `dddd`, to the stack. Values are copied as words, so the demonstrated form requires a positive even length. |
+| `$0C-$0F dddd nnnn` | `WRITE.BLOCK.l`         | Copy `nnnn` bytes from the stack to lexical level `l=opcode&3`, displacement `dddd`.                                                                                        |
+| `$10-$17 yy`        | `BR s11`                | Add the signed 11-bit displacement `((opcode&7)<<8)\|yy` to VPC after the operand.                                                                                          |
+| `$18-$1F yy`        | `BRZ s11`               | Pop a long flag and take the same relative branch when its low byte is zero.                                                                                                |
+| `$20-$3F`           | direct primitives       | See the next table.                                                                                                                                                         |
+| `$40-$7F`           | `PUSH.U6`               | Push `opcode & $3F`.                                                                                                                                                        |
+| `$80-$FF`           | lexical variable family | Compact read/write, indexed, size, scope, and displacement fields; decoded below.                                                                                           |
 
 The 11-bit branch displacement is sign-extended. A displacement of zero points
 to the instruction immediately after its operand.
 
 ## Direct primitives `$20-$3F`
 
-| Opcode | Handler | Reconstructed mnemonic | Operands and effect |
-| ---: | ---: | --- | --- |
-| `$20` | `$279A` | `ADD.F` | `a:F b:F -> a+b` |
-| `$21` | `$2792` | `SUB.F` | `a:F b:F -> a-b` |
-| `$22` | `$28D6` | `MUL.F` | `a:F b:F -> a*b` |
-| `$23` | `$2A1C` | `DIV.F` | `a:F b:F -> a/b` |
-| `$24` | `$24E4` | `GT.F` | `a:F b:F -> a>b` |
-| `$25` | `$24F0` | `GTE.F` | `a:F b:F -> a>=b` |
-| `$26` | `$24D8` | `EQ.F` | `a:F b:F -> a==b` |
-| `$27` | `$2566` | `ADD.L` | `a:L b:L -> (a+b) mod 2^32` |
-| `$28` | `$256C` | `SUB.L` | `a:L b:L -> (a-b) mod 2^32` |
-| `$29` | `$2572` | `MUL.L` | Unsigned multiply; retain the low 32 bits. |
-| `$2A` | `$249E` | `EQ.L` | `a:L b:L -> a==b` |
-| `$2B` | `$24A6` | `NEQ.L` | `a:L b:L -> a!=b` |
-| `$2C` | `$2554` | `AND.L` | Bitwise AND. |
-| `$2D` | `$255A` | `OR.L` | Bitwise OR. |
-| `$2E` | `$2550` | `NOT.L` | Bitwise complement in place. |
-| `$2F` | `$25B4` | `MOD.L` | Unsigned `a % b`. A zero divisor returns zero rather than trapping. |
-| `$30 ww` | `$212C` | `BSR.68K` | Read unsigned 16-bit `ww`, then call native address `VPC-ww`; resume P-code after the call. |
-| `$31 bb` | `$2444` | `SUBSP.B` | Allocate `bb` stack bytes (`A6 -= bb`). |
-| `$32 bb` | `$2458` | `ADDSP.B` | Release `bb` stack bytes (`A6 += bb`). |
-| `$33` | `$2300` | `STORE.INDIRECT` | Pop an address/size descriptor, then store and pop its value. Descriptors are produced by the contextual-zero read form described below. |
-| `$34` | `$213C` | `RETURN` | Restore the caller's lexical-display entry and return through the native control stack to the saved VPC. |
-| `$35 ...` | `$2B48` | `SWITCH` | Pop a selector; compare its low byte against case keys in variable-length records. |
-| `$36 dd` | `$2362` | `STORE.KEEP dd` | Store the top byte, word, or long to the direct lexical address encoded by `dd`, without popping it. Used to initialize loop-control variables. |
-| `$37 dd bb` | `$23D2` | `FOR.UP.NEXT` | Increment variable `dd`; if it did not wrap to zero, push the new value and branch backward by unsigned 16-bit `bb`. Otherwise skip `bb`. |
-| `$38 tt` | `$237A` | `FOR.UP.TEST` | Pop `current, limit`; continue when unsigned `current<=limit`, otherwise skip forward by `tt&$3FFF`. Top bits of `tt` select byte/word/long comparison. |
-| `$39 dd bb` | `$23FC` | `FOR.DOWN.NEXT` | Decrement variable `dd`; if it did not borrow, push the new value and branch backward by unsigned 16-bit `bb`. Otherwise skip `bb`. |
-| `$3A tt` | `$23A6` | `FOR.DOWN.TEST` | Pop `current, limit`; continue when unsigned `current>=limit`, otherwise skip forward by `tt&$3FFF`. |
-| `$3B ffffffff ffffffff` | `$232A` | `PUSH.F` | Push an inline eight-byte real bit pattern. |
-| `$3C wwww` | `$2356` | `PUSH.U16` | Zero-extend and push an inline 16-bit value as a long. |
-| `$3D llllllll` | `$2348` | `PUSH.L` | Push an inline 32-bit value. |
-| `$3E` | `$2340` | `PUSH.F0` | Push eight zero bytes: real `+0.0`. |
-| `$3F nn bytes...` | `$2B32` | `DISP` | Pop a display-buffer offset and copy `nn` inline bytes to `$017FE0+offset`. |
+| Opcode                  | Handler | Reconstructed mnemonic | Operands and effect                                                                                                                                     |
+| ----------------------: | ------: | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$20`                   | `$279A` | `ADD.F`                | `a:F b:F -> a+b`                                                                                                                                        |
+| `$21`                   | `$2792` | `SUB.F`                | `a:F b:F -> a-b`                                                                                                                                        |
+| `$22`                   | `$28D6` | `MUL.F`                | `a:F b:F -> a*b`                                                                                                                                        |
+| `$23`                   | `$2A1C` | `DIV.F`                | `a:F b:F -> a/b`                                                                                                                                        |
+| `$24`                   | `$24E4` | `GT.F`                 | `a:F b:F -> a>b`                                                                                                                                        |
+| `$25`                   | `$24F0` | `GTE.F`                | `a:F b:F -> a>=b`                                                                                                                                       |
+| `$26`                   | `$24D8` | `EQ.F`                 | `a:F b:F -> a==b`                                                                                                                                       |
+| `$27`                   | `$2566` | `ADD.L`                | `a:L b:L -> (a+b) mod 2^32`                                                                                                                             |
+| `$28`                   | `$256C` | `SUB.L`                | `a:L b:L -> (a-b) mod 2^32`                                                                                                                             |
+| `$29`                   | `$2572` | `MUL.L`                | Unsigned multiply; retain the low 32 bits.                                                                                                              |
+| `$2A`                   | `$249E` | `EQ.L`                 | `a:L b:L -> a==b`                                                                                                                                       |
+| `$2B`                   | `$24A6` | `NEQ.L`                | `a:L b:L -> a!=b`                                                                                                                                       |
+| `$2C`                   | `$2554` | `AND.L`                | Bitwise AND.                                                                                                                                            |
+| `$2D`                   | `$255A` | `OR.L`                 | Bitwise OR.                                                                                                                                             |
+| `$2E`                   | `$2550` | `NOT.L`                | Bitwise complement in place.                                                                                                                            |
+| `$2F`                   | `$25B4` | `MOD.L`                | Unsigned `a % b`. A zero divisor returns zero rather than trapping.                                                                                     |
+| `$30 ww`                | `$212C` | `BSR.68K`              | Read unsigned 16-bit `ww`, then call native address `VPC-ww`; resume P-code after the call.                                                             |
+| `$31 bb`                | `$2444` | `SUBSP.B`              | Allocate `bb` stack bytes (`A6 -= bb`).                                                                                                                 |
+| `$32 bb`                | `$2458` | `ADDSP.B`              | Release `bb` stack bytes (`A6 += bb`).                                                                                                                  |
+| `$33`                   | `$2300` | `STORE.INDIRECT`       | Pop an address/size descriptor, then store and pop its value. Descriptors are produced by the contextual-zero read form described below.                |
+| `$34`                   | `$213C` | `RETURN`               | Restore the caller's lexical-display entry and return through the native control stack to the saved VPC.                                                |
+| `$35 ...`               | `$2B48` | `SWITCH`               | Pop a selector; compare its low byte against case keys in variable-length records.                                                                      |
+| `$36 dd`                | `$2362` | `STORE.KEEP dd`        | Store the top byte, word, or long to the direct lexical address encoded by `dd`, without popping it. Used to initialize loop-control variables.         |
+| `$37 dd bb`             | `$23D2` | `FOR.UP.NEXT`          | Increment variable `dd`; if it did not wrap to zero, push the new value and branch backward by unsigned 16-bit `bb`. Otherwise skip `bb`.               |
+| `$38 tt`                | `$237A` | `FOR.UP.TEST`          | Pop `current, limit`; continue when unsigned `current<=limit`, otherwise skip forward by `tt&$3FFF`. Top bits of `tt` select byte/word/long comparison. |
+| `$39 dd bb`             | `$23FC` | `FOR.DOWN.NEXT`        | Decrement variable `dd`; if it did not borrow, push the new value and branch backward by unsigned 16-bit `bb`. Otherwise skip `bb`.                     |
+| `$3A tt`                | `$23A6` | `FOR.DOWN.TEST`        | Pop `current, limit`; continue when unsigned `current>=limit`, otherwise skip forward by `tt&$3FFF`.                                                    |
+| `$3B ffffffff ffffffff` | `$232A` | `PUSH.F`               | Push an inline eight-byte real bit pattern.                                                                                                             |
+| `$3C wwww`              | `$2356` | `PUSH.U16`             | Zero-extend and push an inline 16-bit value as a long.                                                                                                  |
+| `$3D llllllll`          | `$2348` | `PUSH.L`               | Push an inline 32-bit value.                                                                                                                            |
+| `$3E`                   | `$2340` | `PUSH.F0`              | Push eight zero bytes: real `+0.0`.                                                                                                                     |
+| `$3F nn bytes...`       | `$2B32` | `DISP`                 | Pop a display-buffer offset and copy `nn` inline bytes to `$017FE0+offset`.                                                                             |
 
 The `dd` operand used by `$36`, `$37`, and `$39` has this layout:
 
@@ -138,25 +138,25 @@ the worked example in the 4000SX notes.
 
 ## Extended primitives `$03 $20-$30`
 
-| Encoding | Handler | Reconstructed mnemonic | Operands and effect |
-| ---: | ---: | --- | --- |
-| `$03 $20` | `$2788` | `NEG.F` | If the high 16 bits are nonzero, toggle the binary64 sign bit; positive zero remains positive. |
-| `$03 $21` | `$24EA` | `LT.F` | `a:F b:F -> a<b` |
-| `$03 $22` | `$24F6` | `LTE.F` | `a:F b:F -> a<=b` |
-| `$03 $23` | `$24DE` | `NEQ.F` | `a:F b:F -> a!=b` |
-| `$03 $24` | `$25AE` | `DIV.L` | Unsigned quotient `a / b`. A zero divisor returns `$FFFFFFFF` rather than trapping. |
-| `$03 $25` | `$24AE` | `GT.L` | Unsigned `a>b`. The old 4000SX disassembler calls this `LT.L`; the handler's operand order proves the reverse. |
-| `$03 $26` | `$24B6` | `LT.L` | Unsigned `a<b`; called `GT.L` by the old disassembler. |
-| `$03 $27` | `$24BE` | `GTE.L` | Unsigned `a>=b`; called `LTE.L` by the old disassembler. |
-| `$03 $28` | `$24C6` | `LTE.L` | Unsigned `a<=b`; called `GTE.L` by the old disassembler. |
-| `$03 $29` | `$25EC` | `F2U.L` | Convert a nonnegative real to unsigned long, truncating toward zero; saturate negative values to zero and values above range to `$FFFFFFFF`. |
-| `$03 $2A` | `$263C` | `U.L2F` | Convert an unsigned long to an eight-byte real. |
-| `$03 $2B nnnn` | `$246C` | `EQ.BLOCK` | Compare two adjacent `nnnn`-byte stack blocks, discard both, and push equality. Comparison proceeds wordwise. |
-| `$03 $2C nnnn` | `$2498` | `NEQ.BLOCK` | As above, with inverted result. |
-| `$03 $2D wwww` | `$244C` | `SUBSP.W` | Allocate an unsigned 16-bit number of stack bytes. |
-| `$03 $2E wwww` | `$2460` | `ADDSP.W` | Release an unsigned 16-bit number of stack bytes. |
-| `$03 $2F` | `$2560` | `XOR.L` | Bitwise exclusive OR. |
-| `$03 $30 ...` | `$219A` | `TRAP1` | Invoke `TRAP #1`. In this firmware the trap consumes an inline length-prefixed string and emits it through the shared output path. |
+| Encoding       | Handler | Reconstructed mnemonic | Operands and effect                                                                                                                          |
+| -------------: | ------: | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$03 $20`      | `$2788` | `NEG.F`                | If the high 16 bits are nonzero, toggle the binary64 sign bit; positive zero remains positive.                                               |
+| `$03 $21`      | `$24EA` | `LT.F`                 | `a:F b:F -> a<b`                                                                                                                             |
+| `$03 $22`      | `$24F6` | `LTE.F`                | `a:F b:F -> a<=b`                                                                                                                            |
+| `$03 $23`      | `$24DE` | `NEQ.F`                | `a:F b:F -> a!=b`                                                                                                                            |
+| `$03 $24`      | `$25AE` | `DIV.L`                | Unsigned quotient `a / b`. A zero divisor returns `$FFFFFFFF` rather than trapping.                                                          |
+| `$03 $25`      | `$24AE` | `GT.L`                 | Unsigned `a>b`. The old 4000SX disassembler calls this `LT.L`; the handler's operand order proves the reverse.                               |
+| `$03 $26`      | `$24B6` | `LT.L`                 | Unsigned `a<b`; called `GT.L` by the old disassembler.                                                                                       |
+| `$03 $27`      | `$24BE` | `GTE.L`                | Unsigned `a>=b`; called `LTE.L` by the old disassembler.                                                                                     |
+| `$03 $28`      | `$24C6` | `LTE.L`                | Unsigned `a<=b`; called `GTE.L` by the old disassembler.                                                                                     |
+| `$03 $29`      | `$25EC` | `F2U.L`                | Convert a nonnegative real to unsigned long, truncating toward zero; saturate negative values to zero and values above range to `$FFFFFFFF`. |
+| `$03 $2A`      | `$263C` | `U.L2F`                | Convert an unsigned long to an eight-byte real.                                                                                              |
+| `$03 $2B nnnn` | `$246C` | `EQ.BLOCK`             | Compare two adjacent `nnnn`-byte stack blocks, discard both, and push equality. Comparison proceeds wordwise.                                |
+| `$03 $2C nnnn` | `$2498` | `NEQ.BLOCK`            | As above, with inverted result.                                                                                                              |
+| `$03 $2D wwww` | `$244C` | `SUBSP.W`              | Allocate an unsigned 16-bit number of stack bytes.                                                                                           |
+| `$03 $2E wwww` | `$2460` | `ADDSP.W`              | Release an unsigned 16-bit number of stack bytes.                                                                                            |
+| `$03 $2F`      | `$2560` | `XOR.L`                | Bitwise exclusive OR.                                                                                                                        |
+| `$03 $30 ...`  | `$219A` | `TRAP1`                | Invoke `TRAP #1`. In this firmware the trap consumes an inline length-prefixed string and emits it through the shared output path.           |
 
 The `$03 $00-$1F` encodings dispatch to the same handlers as `$20-$3F`.
 They are valid but waste one byte and have not been seen as the compiler's
@@ -173,13 +173,13 @@ Every high-bit opcode is decoded by one common path:
 +---+-------+-------+-------+-----------+-------+
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `disp` | `0`: one-byte displacement (`$80-$BF`); `1`: two-byte displacement (`$C0-$FF`). |
+| Field   | Meaning                                                                                                                                                                            |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disp`  | `0`: one-byte displacement (`$80-$BF`); `1`: two-byte displacement (`$C0-$FF`).                                                                                                    |
 | `index` | Add a stack-supplied index after scaling it by `1<<size`. Reads pop the index. Writes remove an index stored immediately below the value while preserving the value for the store. |
-| `write` | `0`: read and push; `1`: pop and write. |
-| `level` | Select lexical display pointer 0 through 3. |
-| `size` | `00`: byte, `01`: word, `10`: long, `11`: eight-byte real/block. It is also the index scale 1, 2, 4, or 8. |
+| `write` | `0`: read and push; `1`: pop and write.                                                                                                                                            |
+| `level` | Select lexical display pointer 0 through 3.                                                                                                                                        |
+| `size`  | `00`: byte, `01`: word, `10`: long, `11`: eight-byte real/block. It is also the index scale 1, 2, 4, or 8.                                                                         |
 
 The base effective address is `display[level]-displacement`. A two-byte
 displacement at or above `$4000` is translated by adding `$C000` before the
@@ -188,12 +188,12 @@ between the two RAM banks.
 
 Representative non-indexed one-byte forms are:
 
-| Range | Operations |
-| --- | --- |
-| `$80-$83` | `READ.B/W/L/F` at lexical level 0 |
-| `$84-$87` | `READ.B/W/L/F` at lexical level 1 |
-| `$88-$8B` | `READ.B/W/L/F` at lexical level 2 |
-| `$8C-$8F` | `READ.B/W/L/F` at lexical level 3 |
+| Range                   | Operations                          |
+| ----------------------- | ----------------------------------- |
+| `$80-$83`               | `READ.B/W/L/F` at lexical level 0   |
+| `$84-$87`               | `READ.B/W/L/F` at lexical level 1   |
+| `$88-$8B`               | `READ.B/W/L/F` at lexical level 2   |
+| `$8C-$8F`               | `READ.B/W/L/F` at lexical level 3   |
 | `$90-$93` ... `$9C-$9F` | Corresponding `WRITE.B/W/L/F` forms |
 
 Setting bit 5 produces indexed forms (`$A0-$BF`), and setting bit 6 changes
